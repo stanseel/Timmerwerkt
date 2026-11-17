@@ -36,8 +36,17 @@
   .thumb canvas{ display:block; width:100%; height:auto; border-radius:4px; box-shadow:0 0 0 1px var(--border); }
   .thumb.on{ border-color:var(--accent); }
   .thumb span{ position:absolute; left:6px; top:6px; font-family:'IBM Plex Mono', monospace; font-size:11px; background:var(--bg); color:var(--text); border-radius:3px; padding:1px 5px; }
-  .add{ display:flex; flex-direction:column; gap:6px; margin-top:4px; }
-  @media (max-width:1000px){ .add{ flex-direction:row; align-items:center; margin-top:0; flex:none; } }
+  .addbtn{ width:100%; max-width:150px; margin-top:12px; }
+  @media (max-width:1000px){ .addbtn{ width:auto; max-width:none; margin-top:10px; } }
+  dialog{ border:1px solid var(--border); border-radius:12px; padding:20px; background:var(--bg); color:var(--text); width:min(720px, calc(100vw - 32px)); max-height:calc(100vh - 32px); }
+  dialog::backdrop{ background:rgba(26,23,27,.6); }
+  .picker-head{ display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px; }
+  .picker-head h2{ margin:0; font-size:20px; font-weight:600; }
+  .picker-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:14px; }
+  .pick{ display:flex; flex-direction:column; gap:8px; padding:0; border:none; background:none; color:var(--text); text-align:left; font:inherit; font-size:14px; font-weight:600; line-height:1.3; cursor:pointer; border-radius:8px; }
+  .pick canvas{ width:100%; height:auto; border-radius:6px; box-shadow:0 0 0 1px var(--border); transition:box-shadow .15s; }
+  .pick:hover canvas, .pick:focus-visible canvas{ box-shadow:0 0 0 3px var(--accent); }
+  .pick:focus-visible{ outline:none; }
 
   /* Preview */
   .stage{ position:sticky; top:16px; }
@@ -63,6 +72,9 @@
   button.done{ background:#249596; border-color:#249596; color:#fff; }
   .filebtn input{ display:none; }
   hr{ border:none; border-top:1px solid var(--border); margin:2px 0; }
+  .toolbar{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0 0 28px; padding:12px 14px; border:1px solid var(--border); border-radius:10px; }
+  .toolbar .mono{ margin-right:4px; }
+  .toolbar .sep{ flex:1; }
   .status{ font-size:13px; color:var(--muted); text-align:center; min-height:1.2em; margin-top:8px; }
 </style>
 </head>
@@ -70,23 +82,29 @@
 <div class="wrap">
   <a class="back" href="../">← Terug naar het voorbeeld</a>
   <h1>Social generator</h1>
-  <p class="intro">Maak een Instagram-post of carrousel in de huisstijl van Timmerwerkt. Kies per beeld een template, pas de tekst aan en voeg een eigen foto toe. Kleuren, lettertype en plaatsing volgen automatisch de richtlijnen. Je werk blijft bewaard in deze browser.</p>
+  <p class="intro">Maak een losse Instagram-post of een carrousel tot 10 slides in de huisstijl van Timmerwerkt. Kies per slide een template, pas de tekst aan en voeg een eigen foto toe. Kleuren, lettertype en plaatsing volgen automatisch de richtlijnen. Je werk blijft bewaard in deze browser.</p>
+
+  <div class="toolbar">
+    <span class="mono">Nieuw</span>
+    <button type="button" class="small" id="newPost">Eén post</button>
+    <button type="button" class="small" id="newCarousel">Carrousel</button>
+    <span class="sep"></span>
+    <button type="button" class="ghost small" id="loadExample">Voorbeeld: winwin-carrousel</button>
+  </div>
 
   <div class="app">
     <div class="strip-col">
-      <div class="mono" style="margin-bottom:8px;">Beelden</div>
+      <div class="mono" style="margin-bottom:8px;">Slides</div>
       <div class="strip" id="strip"></div>
-      <div class="add">
-        <select id="newTpl" aria-label="Template voor nieuw beeld"></select>
-        <button type="button" class="ghost small" id="addSlide">+ Beeld toevoegen</button>
-      </div>
+      <p class="hint" id="countHint" style="margin:10px 0 0;"></p>
+      <button type="button" class="ghost small addbtn" id="addSlide">+ Slide toevoegen</button>
     </div>
 
     <div class="stage">
-      <canvas id="preview" width="1080" height="1350" aria-label="Voorbeeld van het geselecteerde beeld"></canvas>
+      <canvas id="preview" width="1080" height="1350" aria-label="Voorbeeld van de geselecteerde slide"></canvas>
       <div class="row">
-        <button type="button" id="dlOne">Download dit beeld</button>
-        <button type="button" class="ghost" id="dlAll">Download alle beelden (zip)</button>
+        <button type="button" id="dlOne">Download deze slide</button>
+        <button type="button" class="ghost" id="dlAll">Download alle slides (zip)</button>
       </div>
       <div class="status" id="status" role="status"></div>
     </div>
@@ -94,6 +112,14 @@
     <form class="panel" id="panel" autocomplete="off" onsubmit="return false"></form>
   </div>
 </div>
+
+<dialog id="picker" aria-labelledby="pickerTitle">
+  <div class="picker-head">
+    <h2 id="pickerTitle">Kies een template</h2>
+    <button type="button" class="ghost small" id="pickerClose">Sluiten</button>
+  </div>
+  <div class="picker-grid" id="pickerGrid"></div>
+</dialog>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
@@ -114,61 +140,199 @@
   };
   var LOGOS = { neg:'../assets/logo-hor-neg.png', pos:'../assets/logo-hor-pos.png' };
 
-  // Templates: which fields each one has. Colours and layout are fixed in the draw functions.
+  /* ---------- Templates ----------
+     Each template lives in one place: its name, which inputs it has, its default content and how it is drawn.
+     To add a template, add an entry here:
+       name      label in the menu
+       photo     true = gets a photo with zoom/position
+       ill       true = can show an illustration (only on white areas)
+       band      true = has a row of blocks from the block pattern
+       fields    text inputs { k, label, area, rows, hint } or choices { k, label, select:[[value, label]], hint }
+       defaults  starting content
+       draw      function(ctx, s, a, i, n): s = content, a = loaded images, i = position, n = number of images.
+                 Use the building blocks below (fit/draw text, rect, band, photo, counter, logo, tagline, ill),
+                 and needsLogo(i, n) for the rule "logo on the first and last image". */
   var TPL = {
-    cover:{ name:'Cover — foto + antraciet', photo:true, band:true, fields:[
-      { k:'titel', label:'Titel', area:true, rows:4, hint:'Liefst een opsomming met "&". Elke regel = nieuwe lijn.' },
-      { k:'sub', label:'Ondertitel', area:true } ] },
-    lijst:{ name:'Lijst — wit blad in teal kader', ill:true, fields:[
-      { k:'titel', label:'Titel', area:false },
-      { k:'items', label:'Punten (één per regel, max. 5)', area:true, rows:5 } ] },
-    foto:{ name:'Foto + teal vlak', photo:true, fields:[
-      { k:'titel', label:'Titel', area:true },
-      { k:'tekst', label:'Tekst', area:true } ] },
-    uitnodiging:{ name:'Uitnodiging / oproep', ill:true, band:true, fields:[
-      { k:'label', label:'Label (klein, in teal)', area:false },
-      { k:'titel', label:'Titel', area:true, hint:'Bijvoorbeeld de datum en het uur, op aparte regels.' },
-      { k:'plaats', label:'Plaats of uitleg', area:true },
-      { k:'knop', label:'Knop', area:false, hint:'Laat leeg om geen knop te tonen.' },
-      { k:'noot', label:'Kleine noot', area:true } ] },
-    statement:{ name:'Statement — antraciet', fields:[
-      { k:'titel', label:'Titel', area:true, rows:5, hint:'Een korte "&"-opsomming werkt het best.' } ] }
+    cover:{
+      name:'Cover — foto + antraciet', photo:true, band:true,
+      fields:[
+        { k:'titel', label:'Titel', area:true, rows:4, hint:'Liefst een opsomming met "&". Elke regel = nieuwe lijn.' },
+        { k:'sub', label:'Ondertitel', area:true } ],
+      defaults:{ titel:'Keukens&\nKasten&\nKansen.', sub:'Schrijf hier een korte zin over waar deze post over gaat.', photo:{ src:'atelier', zoom:1, x:50, y:50 } },
+      draw:function(ctx, s, a, i, n){
+        photo(ctx, a.photo, s.photo, 0, 0, W, 600);
+        band(ctx, s.band, 600);
+        rect(ctx, 0, 668, W, H - 668, COL.antraciet);
+        var t = fit(ctx, s.titel, { weight:600, size:100, min:56, lh:1.02, maxW:920, maxH:310, track:-0.015 });
+        var y = draw(ctx, t, M, 732, COL.wit);
+        if (s.sub) draw(ctx, fit(ctx, s.sub, { weight:400, size:38, min:26, lh:1.3, maxW:760, maxH:1160 - (y + 32) }), M, y + 32, COL.wit);
+        counter(ctx, i, n, M, 1258, COL.wit);
+        if (needsLogo(i, n)) logo(ctx, a.logoNeg, 300, M, 64);
+      }
+    },
+    lijst:{
+      name:'Lijst — wit blad in teal kader', ill:true,
+      fields:[
+        { k:'titel', label:'Titel', area:false },
+        { k:'items', label:'Punten (één per regel, max. 5)', area:true, rows:5 } ],
+      defaults:{ titel:'Titel:', items:'Eerste punt\nTweede punt\nDerde punt', ill:'kastje' },
+      draw:function(ctx, s, a, i, n){
+        rect(ctx, 0, 0, W, H, COL.teal);
+        rect(ctx, 0, 0, 230, 360, COL.antraciet);
+        rect(ctx, W - 230, H - 360, 230, 360, COL.antraciet);
+        rect(ctx, 56, 56, W - 112, H - 112, COL.wit);
+        var x = 128, right = W - 128, bottom = H - 112;
+        var withLogo = needsLogo(i, n), logoY = bottom - 77;
+        if (withLogo) logoAt(ctx, a.logoPos, x, logoY, 240);
+        var cY = withLogo ? logoY - 52 : bottom - 24;
+        counter(ctx, i, n, x, cY, COL.antraciet);
+        var limit = (i < n - 1 ? cY : (withLogo ? logoY : bottom)) - 36;
+        var illTop = ill(ctx, a.ill, 230, 110, 100);
+        if (illTop) limit = Math.min(limit, illTop - 24);
+        var t = fit(ctx, s.titel, { weight:600, size:96, min:56, lh:1.02, maxW:right - x, maxH:200, track:-0.015 });
+        var top = draw(ctx, t, x, 128, COL.antraciet) + 52;
+        var items = String(s.items || '').split('\n').filter(function(l){ return l.trim(); }).slice(0, 5);
+        // Shrink the list until it fits above the illustration, counter and logo.
+        var size, rows;
+        for (size = 50; size >= 28; size -= 2) {
+          font(ctx, 600, size); spacing(ctx, -0.01 * size);
+          rows = items.map(function(it){ return wrap(ctx, it, right - (x + 2.2 * size)); });
+          var total = 3;
+          rows.forEach(function(r){ total += 3 + size * 1.2 + r.length * size * 1.12; });
+          if (top + total <= limit) break;
+        }
+        var pad = size * 0.6, y = top;
+        rows.forEach(function(r, k){
+          rect(ctx, x, y, right - x, 3, COL.antraciet); y += 3 + pad;
+          draw(ctx, { size:size, lh:1.12, weight:600, track:-0.01, lines:[String(k + 1).padStart(2, '0')], h:size * 1.12 }, x, y, COL.tekst);
+          y = draw(ctx, { size:size, lh:1.12, weight:600, track:-0.01, lines:r, h:r.length * size * 1.12 }, x + 2.2 * size, y, COL.antraciet) + pad;
+        });
+        if (rows.length) rect(ctx, x, y, right - x, 3, COL.antraciet);
+      }
+    },
+    foto:{
+      name:'Foto + vlak', photo:true,
+      fields:[
+        { k:'titel', label:'Titel', area:true },
+        { k:'tekst', label:'Tekst', area:true },
+        { k:'vlak', label:'Kleur van het vlak', select:[['teal','Licht teal'],['wit','Wit'],['antraciet','Antraciet']],
+          hint:'Op teal komt geen logo, omdat het teal blokje van de T dan wegvalt. Voor één post, of de eerste of laatste slide, kies je wit of antraciet.' } ],
+      defaults:{ titel:'Hier groeit iets\nmoois uit hout.', tekst:'Een korte zin onder de titel.', vlak:'teal', photo:{ src:'plaatsing', zoom:1, x:50, y:50 } },
+      draw:function(ctx, s, a, i, n){
+        var vlak = s.vlak || 'teal', ink = vlak === 'antraciet' ? COL.wit : COL.antraciet;
+        photo(ctx, a.photo, s.photo, 0, 0, W, 620);
+        rect(ctx, 0, 620, W, H - 620, COL[vlak]);
+        var withLogo = needsLogo(i, n) && vlak !== 'teal';
+        var t = fit(ctx, s.titel, { weight:600, size:96, min:56, lh:1.02, maxW:920, maxH:310, track:-0.015 });
+        var y = draw(ctx, t, M, 692, ink);
+        if (s.tekst) draw(ctx, fit(ctx, s.tekst, { weight:400, size:40, min:26, lh:1.3, maxW:840, maxH:(withLogo ? 1150 : 1220) - (y + 40) }), M, y + 40, ink);
+        counter(ctx, i, n, M, 1258, ink);
+        if (withLogo) logo(ctx, vlak === 'antraciet' ? a.logoNeg : a.logoPos, 300, M, 64);
+      }
+    },
+    uitnodiging:{
+      name:'Uitnodiging / oproep', ill:true, band:true,
+      fields:[
+        { k:'label', label:'Label (klein, in teal)', area:false },
+        { k:'titel', label:'Titel', area:true, hint:'Bijvoorbeeld de datum en het uur, op aparte regels.' },
+        { k:'plaats', label:'Plaats of uitleg', area:true },
+        { k:'knop', label:'Knop', area:false, hint:'Laat leeg om geen knop te tonen.' },
+        { k:'noot', label:'Kleine noot', area:true } ],
+      defaults:{ label:'Label', titel:'Dag\nDatum\nUur', plaats:'Plaats\nAdres', knop:'Schrijf in via de link in bio', noot:'', ill:'ladder' },
+      draw:function(ctx, s, a, i, n){
+        rect(ctx, 0, 0, W, H, COL.wit);
+        band(ctx, s.band, 0);
+        var illTop = ill(ctx, a.ill, 220, 72, 250);
+        var colW = a.ill ? W - 72 - 220 - 40 - M : 920;
+        var withLogo = needsLogo(i, n), floor = withLogo ? H - 64 - 98 - 40 : 1258 - 40;
+        // Scale the whole column down until it ends above the footer.
+        for (var k = 1; k >= 0.6; k -= 0.05) {
+          var y = 148, parts = [];
+          if (s.label) { var l = fit(ctx, s.label, { weight:600, size:36 * k, min:20, lh:1.2, maxW:920, maxH:50 }); parts.push([l, y, COL.tekst]); y += l.h + 24 * k; }
+          var t = fit(ctx, s.titel, { weight:600, size:112 * k, min:48, lh:1.02, maxW:920, maxH:400 * k, track:-0.015 });
+          parts.push([t, y, COL.antraciet]); y += t.h;
+          var narrow = function(yy){ return a.ill && yy + 60 > illTop ? colW : 920; };
+          if (s.plaats) { var p = fit(ctx, s.plaats, { weight:400, size:42 * k, min:24, lh:1.3, maxW:narrow(y), maxH:400 }); y += 36 * k; parts.push([p, y, COL.antraciet]); y += p.h; }
+          var btn = null;
+          if (s.knop) {
+            y += 52 * k;
+            var bt = fit(ctx, s.knop, { weight:600, size:38 * k, min:22, lh:1.2, maxW:narrow(y) - 80, maxH:60 * k });
+            var bw = Math.max.apply(null, bt.lines.map(function(ln){ font(ctx, 600, bt.size); return ctx.measureText(ln).width; })) + 80;
+            btn = { t:bt, y:y, w:bw, h:bt.h + 52 * k }; y += btn.h;
+          }
+          var nt = null;
+          if (s.noot) { y += 36 * k; nt = fit(ctx, s.noot, { weight:400, size:30 * k, min:20, lh:1.4, maxW:Math.min(640, narrow(y)), maxH:400 }); nt.y = y; y += nt.h; }
+          if (y <= floor) break;
+        }
+        parts.forEach(function(pt){ draw(ctx, pt[0], M, pt[1], pt[2]); });
+        if (btn) { rect(ctx, M, btn.y, btn.w, btn.h, COL.antraciet); draw(ctx, btn.t, M + 40, btn.y + 26 * k, COL.wit); }
+        if (nt) draw(ctx, nt, M, nt.y, COL.antraciet);
+        if (withLogo) { tagline(ctx, COL.antraciet); logo(ctx, a.logoPos, 330, M, 64); }
+        else counter(ctx, i, n, M, 1258, COL.antraciet);
+      }
+    },
+    statement:{
+      name:'Statement — antraciet',
+      fields:[
+        { k:'titel', label:'Titel', area:true, rows:5, hint:'Een korte "&"-opsomming werkt het best.' } ],
+      defaults:{ titel:'Schuren&\nFrezen&\nLijm&\nKlemmen.' },
+      draw:function(ctx, s, a, i, n){
+        rect(ctx, 0, 0, W, H, COL.antraciet);
+        draw(ctx, fit(ctx, s.titel, { weight:600, size:150, min:64, lh:1.0, maxW:920, maxH:900, track:-0.015 }), M, 110, COL.wit);
+        if (needsLogo(i, n)) { tagline(ctx, COL.wit); logo(ctx, a.logoNeg, 300, M, 64); }
+        else counter(ctx, i, n, M, 1258, COL.wit);
+      }
+    }
   };
 
+  // The logo opens and closes a series: first and last image (so always on a single post).
+  function needsLogo(i, n){ return i === 0 || i === n - 1; }
+
+  function blank(tpl){
+    var def = TPL[tpl], s = JSON.parse(JSON.stringify(def.defaults || {}));
+    s.tpl = tpl;
+    def.fields.forEach(function(f){ if (s[f.k] == null) s[f.k] = f.select ? f.select[0][0] : ''; });
+    if (def.photo && !s.photo) s.photo = { src:'atelier', zoom:1, x:50, y:50 };
+    if (def.band) s.band = shuffled();
+    return s;
+  }
+
+  // Starting points
+  function post(){ return [blank('cover')]; }
+  function carousel(){ return [blank('cover'), blank('foto'), blank('lijst'), blank('statement')]; }
   function example(){
     return [
       { tpl:'cover', titel:'Hout&\nMensen&\nJouw lening.', sub:'De 4 vragen die je ons stelt vóór je een winwin-lening geeft.', photo:{ src:'atelier', zoom:1, x:50, y:50 }, band:['t','w','a','t','w','t','a','w'] },
       { tpl:'lijst', titel:'Dit zijn ze:', items:"Is Timmerwerkt financieel gezond?\nHoe is zo'n winwin-lening geregeld?\nWat als het misloopt?\nHoeveel kan ik investeren en wat brengt het op?", ill:'highfive' },
-      { tpl:'foto', titel:'Onze cijfers&\nOnze machines&\nOnze ploeg.', tekst:'Kom alles inkijken op de infoavond. Ahja, je wil toch weten waar je in investeert ;)', photo:{ src:'plaatsing', zoom:1, x:50, y:50 } },
+      { tpl:'foto', titel:'Onze cijfers&\nOnze machines&\nOnze ploeg.', tekst:'Kom alles inkijken op de infoavond. Ahja, je wil toch weten waar je in investeert ;)', vlak:'teal', photo:{ src:'plaatsing', zoom:1, x:50, y:50 } },
       { tpl:'uitnodiging', label:'Infoavond winwin-ronde', titel:'Dinsdag\n24 november\n19u', plaats:'Timmerwerkt-atelier\nBraamstraat 7, Evergem', knop:'Schrijf in via de link in bio', noot:'Een winwin-lening geven kan nog tot 4 december.', ill:'ladder', band:['a','w','t','w','a','t','w','t'] }
     ];
   }
-  function blank(tpl){
-    var s = { tpl:tpl };
-    TPL[tpl].fields.forEach(function(f){ s[f.k] = ''; });
-    if (tpl === 'cover') { s.titel = 'Titel&\nTitel&\nTitel.'; s.sub = 'Een korte zin onder de titel.'; }
-    if (tpl === 'lijst') { s.titel = 'Titel:'; s.items = 'Eerste punt\nTweede punt\nDerde punt'; s.ill = 'highfive'; }
-    if (tpl === 'foto') { s.titel = 'Titel&\nTitel.'; s.tekst = 'Een korte zin onder de titel.'; }
-    if (tpl === 'uitnodiging') { s.label = 'Label'; s.titel = 'Datum\nUur'; s.plaats = 'Plaats'; s.knop = 'Schrijf in via de link in bio'; s.noot = ''; s.ill = 'ladder'; }
-    if (tpl === 'statement') { s.titel = 'Zaag&\nSchuren&\nFrezen&\nLijm.'; }
-    if (TPL[tpl].photo) s.photo = { src:'atelier', zoom:1, x:50, y:50 };
-    if (TPL[tpl].band) s.band = shuffled();
-    return s;
-  }
+  // A random row of 8 blocks: no two neighbours the same colour, and always more white than antraciet,
+  // so the row stays light (rule in the guide, chapter 07).
   function shuffled(){
-    var out = [], c = ['t','w','a'];
-    for (var i = 0; i < 8; i++) {
-      var pick;
-      do { pick = c[Math.floor(Math.random() * 3)]; } while (i && pick === out[i - 1]);
-      out.push(pick);
-    }
+    var c = ['t','w','a'], out;
+    do {
+      out = [];
+      for (var i = 0; i < 8; i++) {
+        var pick;
+        do { pick = c[Math.floor(Math.random() * 3)]; } while (i && pick === out[i - 1]);
+        out.push(pick);
+      }
+    } while (!lightBand(out));
     return out;
+  }
+  function lightBand(cells){
+    var w = cells.filter(function(x){ return x === 'w'; }).length;
+    var a = cells.filter(function(x){ return x === 'a'; }).length;
+    return w > a;
   }
 
   // ---------- State ----------
-  var state = load() || { slides:example(), sel:0 };
+  var state = load() || { slides:post(), sel:0 };
   var uploads = {}; // photo id -> dataURL, kept in memory and saved when space allows
   if (state.uploads) { uploads = state.uploads; delete state.uploads; }
+  state.slides.forEach(function(sl){ if (sl.band && !lightBand(sl.band)) sl.band = shuffled(); });
 
   function load(){
     try { var raw = localStorage.getItem(STORE); return raw ? JSON.parse(raw) : null; } catch(e){ return null; }
@@ -253,6 +417,9 @@
     font(ctx, 400, 24, MONO); spacing(ctx, 1); ctx.fillStyle = color; ctx.textBaseline = 'top';
     ctx.fillText((i + 1) + '/' + n + '  →', x, y); spacing(ctx, 0);
   }
+  function logoAt(ctx, im, x, y, w){
+    if (im) ctx.drawImage(im, x, y, w, w * im.height / im.width);
+  }
   function logo(ctx, im, w, right, bottom){
     if (!im) return;
     var h = w * im.height / im.width;
@@ -269,118 +436,34 @@
     return y;
   }
 
-  // ---------- Templates ----------
-  var DRAW = {
-    cover: function(ctx, s, a, i, n){
-      photo(ctx, a.photo, s.photo, 0, 0, W, 600);
-      band(ctx, s.band, 600);
-      rect(ctx, 0, 668, W, H - 668, COL.antraciet);
-      var t = fit(ctx, s.titel, { weight:600, size:100, min:56, lh:1.02, maxW:920, maxH:310, track:-0.015 });
-      var y = draw(ctx, t, M, 732, COL.wit);
-      if (s.sub) {
-        var sub = fit(ctx, s.sub, { weight:400, size:38, min:26, lh:1.3, maxW:760, maxH:1160 - (y + 32) });
-        draw(ctx, sub, M, y + 32, COL.wit);
-      }
-      counter(ctx, i, n, M, 1258, COL.wit);
-      logo(ctx, a.logoNeg, 300, M, 64);
-    },
-    lijst: function(ctx, s, a, i, n){
-      rect(ctx, 0, 0, W, H, COL.teal);
-      rect(ctx, 0, 0, 230, 360, COL.antraciet);
-      rect(ctx, W - 230, H - 360, 230, 360, COL.antraciet);
-      rect(ctx, 56, 56, W - 112, H - 112, COL.wit);
-      var x = 128, right = W - 128, limit = a.ill ? 0 : H - 56 - 110;
-      var illTop = ill(ctx, a.ill, 230, 110, 100);
-      if (illTop) limit = illTop - 24;
-      var t = fit(ctx, s.titel, { weight:600, size:96, min:56, lh:1.02, maxW:right - x, maxH:200, track:-0.015 });
-      var top = draw(ctx, t, x, 128, COL.antraciet) + 52;
-      var items = String(s.items || '').split('\n').filter(function(l){ return l.trim(); }).slice(0, 5);
-      // Shrink the list until it fits above the illustration.
-      var size, rows;
-      for (size = 50; size >= 30; size -= 2) {
-        font(ctx, 600, size); spacing(ctx, -0.01 * size);
-        rows = items.map(function(it){ return wrap(ctx, it, right - (x + 2.2 * size)); });
-        var pad = size * 0.6, total = 3;
-        rows.forEach(function(r){ total += 3 + pad * 2 + r.length * size * 1.12; });
-        if (top + total <= limit) break;
-      }
-      var pad2 = size * 0.6, y = top, numW = 2.2 * size;
-      rows.forEach(function(r, k){
-        rect(ctx, x, y, right - x, 3, COL.antraciet); y += 3 + pad2;
-        draw(ctx, { size:size, lh:1.12, weight:600, track:-0.01, lines:[String(k + 1).padStart(2, '0')], h:size * 1.12 }, x, y, COL.tekst);
-        y = draw(ctx, { size:size, lh:1.12, weight:600, track:-0.01, lines:r, h:r.length * size * 1.12 }, x + numW, y, COL.antraciet) + pad2;
-      });
-      if (rows.length) rect(ctx, x, y, right - x, 3, COL.antraciet);
-      counter(ctx, i, n, x, H - 56 - 56 - 24, COL.antraciet);
-    },
-    foto: function(ctx, s, a, i, n){
-      photo(ctx, a.photo, s.photo, 0, 0, W, 620);
-      rect(ctx, 0, 620, W, H - 620, COL.teal);
-      var t = fit(ctx, s.titel, { weight:600, size:96, min:56, lh:1.02, maxW:920, maxH:310, track:-0.015 });
-      var y = draw(ctx, t, M, 692, COL.antraciet);
-      if (s.tekst) {
-        var b = fit(ctx, s.tekst, { weight:400, size:40, min:26, lh:1.3, maxW:840, maxH:1220 - (y + 40) });
-        draw(ctx, b, M, y + 40, COL.antraciet);
-      }
-      counter(ctx, i, n, M, 1258, COL.antraciet);
-    },
-    uitnodiging: function(ctx, s, a, i, n){
-      rect(ctx, 0, 0, W, H, COL.wit);
-      band(ctx, s.band, 0);
-      var illTop = ill(ctx, a.ill, 220, 72, 250);
-      var colW = a.ill ? W - 72 - 220 - 40 - M : 920;
-      // Scale the whole column down until it ends above the tagline.
-      for (var k = 1; k >= 0.6; k -= 0.05) {
-        var y = 148, parts = [];
-        if (s.label) { var l = fit(ctx, s.label, { weight:600, size:36 * k, min:20, lh:1.2, maxW:920, maxH:50 }); parts.push([l, y, COL.tekst]); y += l.h + 24 * k; }
-        var t = fit(ctx, s.titel, { weight:600, size:112 * k, min:48, lh:1.02, maxW:920, maxH:400 * k, track:-0.015 });
-        parts.push([t, y, COL.antraciet]); y += t.h;
-        var narrow = function(yy){ return a.ill && yy + 60 > illTop ? colW : 920; };
-        if (s.plaats) { var p = fit(ctx, s.plaats, { weight:400, size:42 * k, min:24, lh:1.3, maxW:narrow(y), maxH:400 }); y += 36 * k; parts.push([p, y, COL.antraciet]); y += p.h; }
-        var btn = null;
-        if (s.knop) {
-          y += 52 * k;
-          var bt = fit(ctx, s.knop, { weight:600, size:38 * k, min:22, lh:1.2, maxW:narrow(y) - 80, maxH:60 * k });
-          var bw = Math.max.apply(null, bt.lines.map(function(ln){ font(ctx, 600, bt.size); return ctx.measureText(ln).width; })) + 80;
-          btn = { t:bt, y:y, w:bw, h:bt.h + 52 * k }; y += btn.h;
-        }
-        var nt = null;
-        if (s.noot) { y += 36 * k; nt = fit(ctx, s.noot, { weight:400, size:30 * k, min:20, lh:1.4, maxW:Math.min(640, narrow(y)), maxH:400 }); nt.y = y; y += nt.h; }
-        if (y <= H - 64 - 98 - 40) break;
-      }
-      parts.forEach(function(pt){ draw(ctx, pt[0], M, pt[1], pt[2]); });
-      if (btn) { rect(ctx, M, btn.y, btn.w, btn.h, COL.antraciet); draw(ctx, btn.t, M + 40, btn.y + 26 * k, COL.wit); }
-      if (nt) draw(ctx, nt, M, nt.y, COL.antraciet);
-      tagline(ctx, COL.antraciet);
-      logo(ctx, a.logoPos, 330, M, 64);
-    },
-    statement: function(ctx, s, a, i, n){
-      rect(ctx, 0, 0, W, H, COL.antraciet);
-      var t = fit(ctx, s.titel, { weight:600, size:150, min:64, lh:1.0, maxW:920, maxH:900, track:-0.015 });
-      draw(ctx, t, M, 110, COL.wit);
-      // Logo and tagline only open or close a series; in between, a counter.
-      if (i === 0 || i === n - 1) { tagline(ctx, COL.wit); logo(ctx, a.logoNeg, 300, M, 64); }
-      else counter(ctx, i, n, M, 1258, COL.wit);
-    }
-  };
-
   function render(canvas, s, i, n){
     var ctx = canvas.getContext('2d');
     var jobs = [img(LOGOS.neg), img(LOGOS.pos), s.photo ? img(photoSrc(s.photo)) : null, s.ill && ILLS[s.ill] ? img(ILLS[s.ill].src) : null];
     return Promise.all(jobs).then(function(r){
       ctx.clearRect(0, 0, W, H);
-      DRAW[s.tpl](ctx, s, { logoNeg:r[0], logoPos:r[1], photo:r[2], ill:r[3] }, i, n);
+      TPL[s.tpl].draw(ctx, s, { logoNeg:r[0], logoPos:r[1], photo:r[2], ill:r[3] }, i, n);
     });
   }
 
   // ---------- UI ----------
   var strip = document.getElementById('strip'), panel = document.getElementById('panel');
   var preview = document.getElementById('preview'), statusEl = document.getElementById('status');
-  var newTpl = document.getElementById('newTpl');
-  Object.keys(TPL).forEach(function(k){ var o = document.createElement('option'); o.value = k; o.textContent = TPL[k].name; newTpl.appendChild(o); });
 
   function cur(){ return state.slides[state.sel]; }
-  function refresh(){ renderStrip(); renderPreview(); save(); }
+  function refresh(){
+    var n = state.slides.length;
+    document.getElementById('countHint').textContent = n === 1
+      ? 'Eén slide: een losse post. Voeg slides toe voor een carrousel.'
+      : 'Carrousel van ' + n + ' slides (max. 10). Het logo staat op de eerste en de laatste slide.';
+    document.getElementById('dlAll').disabled = n === 1;
+    document.getElementById('dlOne').textContent = n === 1 ? 'Download de post' : 'Download deze slide';
+    renderStrip(); renderPreview(); save();
+  }
+  function start(slides, msg){
+    if (!confirm('Je huidige slides worden vervangen. Doorgaan?')) return;
+    state = { slides:slides, sel:0 }; uploads = {}; buildForm(); refresh();
+    say(null, msg);
+  }
   function renderPreview(){ return render(preview, cur(), state.sel, state.slides.length); }
 
   function renderStrip(){
@@ -389,7 +472,7 @@
     state.slides.forEach(function(s, i){
       var b = document.createElement('button');
       b.type = 'button'; b.className = 'thumb' + (i === state.sel ? ' on' : '');
-      b.setAttribute('aria-label', 'Beeld ' + (i + 1));
+      b.setAttribute('aria-label', 'Slide ' + (i + 1));
       var c = document.createElement('canvas'); c.width = W; c.height = H;
       var tag = document.createElement('span'); tag.textContent = i + 1;
       b.appendChild(c); b.appendChild(tag);
@@ -417,7 +500,7 @@
   function buildForm(){
     var s = cur(), def = TPL[s.tpl], n = state.slides.length, i = state.sel;
     panel.innerHTML = '';
-    var h = document.createElement('h2'); h.textContent = 'Beeld ' + (i + 1) + ' van ' + n; panel.appendChild(h);
+    var h = document.createElement('h2'); h.textContent = n === 1 ? 'Eén post' : 'Slide ' + (i + 1) + ' van ' + n; panel.appendChild(h);
 
     var sel = document.createElement('select');
     Object.keys(TPL).forEach(function(k){ var o = document.createElement('option'); o.value = k; o.textContent = TPL[k].name; if (k === s.tpl) o.selected = true; sel.appendChild(o); });
@@ -431,6 +514,13 @@
     panel.appendChild(field('Template', sel));
 
     def.fields.forEach(function(f){
+      if (f.select) {
+        var se = document.createElement('select');
+        f.select.forEach(function(o){ var op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; if ((s[f.k] || f.select[0][0]) === o[0]) op.selected = true; se.appendChild(op); });
+        se.addEventListener('change', function(){ s[f.k] = se.value; refresh(); });
+        panel.appendChild(field(f.label, se, f.hint));
+        return;
+      }
       var el = f.area ? document.createElement('textarea') : document.createElement('input');
       if (!f.area) el.type = 'text';
       if (f.area) el.rows = f.rows || 3;
@@ -497,12 +587,6 @@
     }, n <= 1));
     panel.appendChild(acts);
 
-    var reset = document.createElement('div'); reset.className = 'btns';
-    reset.appendChild(btn('Opnieuw beginnen met het voorbeeld', 'ghost small', function(){
-      if (!confirm('Alle beelden vervangen door het voorbeeld? Je huidige werk gaat verloren.')) return;
-      state = { slides:example(), sel:0 }; uploads = {}; buildForm(); refresh();
-    }));
-    panel.appendChild(reset);
   }
 
   function move(d){
@@ -531,10 +615,32 @@
     reader.readAsDataURL(file);
   }
 
-  document.getElementById('addSlide').addEventListener('click', function(){
-    if (state.slides.length >= 10) { say(null, 'Een carrousel heeft maximaal 10 beelden.'); return; }
-    state.slides.splice(state.sel + 1, 0, blank(newTpl.value)); state.sel += 1; buildForm(); refresh();
-  });
+  document.getElementById('newPost').addEventListener('click', function(){ start(post(), 'Nieuwe post gestart.'); });
+  document.getElementById('newCarousel').addEventListener('click', function(){ start(carousel(), 'Nieuwe carrousel gestart.'); });
+  document.getElementById('loadExample').addEventListener('click', function(){ start(example(), 'Voorbeeld geladen.'); });
+
+  // Template picker: one card per template, so new templates show up here automatically.
+  var picker = document.getElementById('picker'), pickerGrid = document.getElementById('pickerGrid');
+  function openPicker(){
+    if (state.slides.length >= 10) { say(null, 'Een carrousel heeft maximaal 10 slides.'); return; }
+    pickerGrid.innerHTML = '';
+    Object.keys(TPL).forEach(function(k){
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'pick';
+      var c = document.createElement('canvas'); c.width = W; c.height = H;
+      var name = document.createElement('span'); name.textContent = TPL[k].name;
+      b.appendChild(c); b.appendChild(name);
+      b.addEventListener('click', function(){
+        state.slides.splice(state.sel + 1, 0, blank(k)); state.sel += 1;
+        picker.close(); buildForm(); refresh();
+      });
+      pickerGrid.appendChild(b);
+      render(c, blank(k), 1, 3); // shown as a middle slide
+    });
+    if (picker.showModal) picker.showModal(); else picker.setAttribute('open', '');
+  }
+  document.getElementById('addSlide').addEventListener('click', openPicker);
+  document.getElementById('pickerClose').addEventListener('click', function(){ picker.close(); });
+  picker.addEventListener('click', function(e){ if (e.target === picker) picker.close(); });
 
   // ---------- Export ----------
   function say(button, msg, label){
@@ -564,21 +670,22 @@
   document.getElementById('dlOne').addEventListener('click', function(){
     var b = this;
     fullCanvas(state.sel).then(blob).then(function(png){
-      download(png, 'timmerwerkt-' + stamp() + '-' + (state.sel + 1) + '.png');
-      say(b, 'Beeld ' + (state.sel + 1) + ' gedownload (1080 × 1350).', '✓ Gedownload');
+      download(png, 'timmerwerkt-' + stamp() + (state.slides.length > 1 ? '-' + (state.sel + 1) : '') + '.png');
+      b.dataset.label = b.textContent;
+      say(b, 'Gedownload als PNG van 1080 × 1350.', '✓ Gedownload');
     });
   });
   document.getElementById('dlAll').addEventListener('click', function(){
     var b = this;
-    if (!window.JSZip) { say(null, 'Zip maken lukt niet zonder internetverbinding. Download de beelden één voor één.'); return; }
+    if (!window.JSZip) { say(null, 'Zip maken lukt niet zonder internetverbinding. Download de slides één voor één.'); return; }
     var zip = new JSZip(), n = state.slides.length, chain = Promise.resolve();
-    say(null, 'Bezig met ' + n + ' beelden…');
+    say(null, 'Bezig met ' + n + ' slides…');
     state.slides.forEach(function(s, i){
       chain = chain.then(function(){ return fullCanvas(i).then(blob).then(function(png){ zip.file('timmerwerkt-' + stamp() + '-' + (i + 1) + '.png', png); }); });
     });
     chain.then(function(){ return zip.generateAsync({ type:'blob' }); }).then(function(z){
       download(z, 'timmerwerkt-carrousel-' + stamp() + '.zip');
-      say(b, n + ' beelden gedownload als zip.', '✓ Gedownload');
+      say(b, n + ' slides gedownload als zip.', '✓ Gedownload');
     });
   });
 
