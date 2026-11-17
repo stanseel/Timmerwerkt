@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Timmerwerkt Social Generator</title>
+<style>
+  @import url('https://use.typekit.net/smo3fuk.css');
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root{
+    --bg:#FFFFFF; --surface:#EFF7F6; --text:#1A171B; --muted:#615f61; --accent:#2F7A78; --border:#E4E0DA; --field:#FFFFFF;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){ --bg:#1A171B; --surface:#221E22; --text:#F3EFE9; --muted:#B4AFAA; --accent:#9FD3D2; --border:#3A353A; --field:#1A171B; }
+  }
+  :root[data-theme="dark"]{ --bg:#1A171B; --surface:#221E22; --text:#F3EFE9; --muted:#B4AFAA; --accent:#9FD3D2; --border:#3A353A; --field:#1A171B; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--text); font-family:'roc-grotesk', system-ui, sans-serif; -webkit-font-smoothing:antialiased; }
+  .wrap{ max-width:1280px; margin:0 auto; padding:40px 16px 64px; }
+  .back{ font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--muted); text-decoration:none; }
+  .back:hover{ color:var(--accent); }
+  h1{ font-size:32px; font-weight:600; margin:16px 0 8px; }
+  .intro{ color:var(--muted); max-width:70ch; line-height:1.55; margin:0 0 28px; }
+  .mono{ font-family:'IBM Plex Mono', monospace; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+
+  .app{ display:grid; grid-template-columns:150px minmax(0,1fr) 340px; gap:24px; align-items:start; }
+  @media (max-width:1000px){ .app{ grid-template-columns:minmax(0,1fr) 320px; } .strip-col{ grid-column:1 / -1; } }
+  @media (max-width:720px){ .app{ grid-template-columns:1fr; } }
+
+  /* Slide strip */
+  .strip{ display:flex; flex-direction:column; gap:10px; }
+  @media (max-width:1000px){ .strip{ flex-direction:row; overflow-x:auto; padding-bottom:6px; } }
+  .thumb{ position:relative; border:2px solid transparent; border-radius:6px; padding:0; background:none; cursor:pointer; flex:none; width:100%; max-width:150px; }
+  @media (max-width:1000px){ .thumb{ width:96px; } }
+  .thumb canvas{ display:block; width:100%; height:auto; border-radius:4px; box-shadow:0 0 0 1px var(--border); }
+  .thumb.on{ border-color:var(--accent); }
+  .thumb span{ position:absolute; left:6px; top:6px; font-family:'IBM Plex Mono', monospace; font-size:11px; background:var(--bg); color:var(--text); border-radius:3px; padding:1px 5px; }
+  .add{ display:flex; flex-direction:column; gap:6px; margin-top:4px; }
+  @media (max-width:1000px){ .add{ flex-direction:row; align-items:center; margin-top:0; flex:none; } }
+
+  /* Preview */
+  .stage{ position:sticky; top:16px; }
+  .stage canvas{ display:block; width:100%; max-width:560px; height:auto; margin:0 auto; border-radius:8px; box-shadow:0 0 0 1px var(--border), 0 6px 24px rgba(26,23,27,.08); }
+  .stage .row{ display:flex; justify-content:center; flex-wrap:wrap; gap:8px; margin-top:16px; }
+  @media (max-width:720px){ .stage{ position:static; } }
+
+  /* Form */
+  .panel{ background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:18px; display:flex; flex-direction:column; gap:14px; }
+  .panel h2{ font-size:18px; font-weight:600; margin:0; }
+  label.f{ display:flex; flex-direction:column; gap:5px; }
+  input[type=text], textarea, select{ font:inherit; font-size:15px; color:var(--text); background:var(--field); border:1px solid var(--border); border-radius:6px; padding:8px 10px; width:100%; }
+  textarea{ resize:vertical; min-height:64px; line-height:1.35; }
+  input:focus, textarea:focus, select:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+  .hint{ font-size:13px; color:var(--muted); line-height:1.45; }
+  .sliders{ display:grid; grid-template-columns:auto 1fr; gap:6px 10px; align-items:center; font-size:13px; color:var(--muted); }
+  input[type=range]{ width:100%; accent-color:var(--accent); }
+  .btns{ display:flex; flex-wrap:wrap; gap:8px; }
+  button, .filebtn{ font:inherit; font-size:14px; font-weight:600; border-radius:999px; padding:8px 14px; cursor:pointer; border:1px solid var(--text); background:var(--text); color:var(--bg); transition:background-color .2s, border-color .2s, color .2s; }
+  button.ghost, .filebtn{ background:transparent; color:var(--text); }
+  button.small{ font-size:13px; padding:6px 11px; }
+  button:disabled{ opacity:.4; cursor:default; }
+  button.done{ background:#249596; border-color:#249596; color:#fff; }
+  .filebtn input{ display:none; }
+  hr{ border:none; border-top:1px solid var(--border); margin:2px 0; }
+  .status{ font-size:13px; color:var(--muted); text-align:center; min-height:1.2em; margin-top:8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="../">← Terug naar het voorbeeld</a>
+  <h1>Social generator</h1>
+  <p class="intro">Maak een Instagram-post of carrousel in de huisstijl van Timmerwerkt. Kies per beeld een template, pas de tekst aan en voeg een eigen foto toe. Kleuren, lettertype en plaatsing volgen automatisch de richtlijnen. Je werk blijft bewaard in deze browser.</p>
+
+  <div class="app">
+    <div class="strip-col">
+      <div class="mono" style="margin-bottom:8px;">Beelden</div>
+      <div class="strip" id="strip"></div>
+      <div class="add">
+        <select id="newTpl" aria-label="Template voor nieuw beeld"></select>
+        <button type="button" class="ghost small" id="addSlide">+ Beeld toevoegen</button>
+      </div>
+    </div>
+
+    <div class="stage">
+      <canvas id="preview" width="1080" height="1350" aria-label="Voorbeeld van het geselecteerde beeld"></canvas>
+      <div class="row">
+        <button type="button" id="dlOne">Download dit beeld</button>
+        <button type="button" class="ghost" id="dlAll">Download alle beelden (zip)</button>
+      </div>
+      <div class="status" id="status" role="status"></div>
+    </div>
+
+    <form class="panel" id="panel" autocomplete="off" onsubmit="return false"></form>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+(function(){
+  var W = 1080, H = 1350, M = 80;
+  var COL = { antraciet:'#1A171B', teal:'#A0D5D5', tekst:'#249596', wit:'#FFFFFF' };
+  var FONT = 'roc-grotesk', MONO = '"IBM Plex Mono"';
+  var TAGLINE = 'Wij timmeren.\nAan meubels.\nAan mensen.';
+  var STORE = 'tw-social-generator-v1';
+
+  var PHOTOS = { atelier:'../assets/foto-atelier.jpg', plaatsing:'../assets/foto-plaatsing.jpg' };
+  var ILLS = {
+    highfive:{ label:'High-five', src:'../assets/ill-highfive.png' },
+    kastje:{ label:'Hand met kastje', src:'../assets/ill-kastje.png' },
+    stapel:{ label:'Figuren op elkaar', src:'../assets/ill-stapel.png' },
+    ladder:{ label:'Ladder', src:'../assets/ill-ladder.png' },
+    kip:{ label:'Kip met schroevendraaier', src:'../assets/ill-kip.png' }
+  };
+  var LOGOS = { neg:'../assets/logo-hor-neg.png', pos:'../assets/logo-hor-pos.png' };
+
+  // Templates: which fields each one has. Colours and layout are fixed in the draw functions.
+  var TPL = {
+    cover:{ name:'Cover — foto + antraciet', photo:true, band:true, fields:[
+      { k:'titel', label:'Titel', area:true, rows:4, hint:'Liefst een opsomming met "&". Elke regel = nieuwe lijn.' },
+      { k:'sub', label:'Ondertitel', area:true } ] },
+    lijst:{ name:'Lijst — wit blad in teal kader', ill:true, fields:[
+      { k:'titel', label:'Titel', area:false },
+      { k:'items', label:'Punten (één per regel, max. 5)', area:true, rows:5 } ] },
+    foto:{ name:'Foto + teal vlak', photo:true, fields:[
+      { k:'titel', label:'Titel', area:true },
+      { k:'tekst', label:'Tekst', area:true } ] },
+    uitnodiging:{ name:'Uitnodiging / oproep', ill:true, band:true, fields:[
+      { k:'label', label:'Label (klein, in teal)', area:false },
+      { k:'titel', label:'Titel', area:true, hint:'Bijvoorbeeld de datum en het uur, op aparte regels.' },
+      { k:'plaats', label:'Plaats of uitleg', area:true },
+      { k:'knop', label:'Knop', area:false, hint:'Laat leeg om geen knop te tonen.' },
+      { k:'noot', label:'Kleine noot', area:true } ] },
+    statement:{ name:'Statement — antraciet', fields:[
+      { k:'titel', label:'Titel', area:true, rows:5, hint:'Een korte "&"-opsomming werkt het best.' } ] }
+  };
+
+  function example(){
+    return [
+      { tpl:'cover', titel:'Hout&\nMensen&\nJouw lening.', sub:'De 4 vragen die je ons stelt vóór je een winwin-lening geeft.', photo:{ src:'atelier', zoom:1, x:50, y:50 }, band:['t','w','a','t','w','t','a','w'] },
+      { tpl:'lijst', titel:'Dit zijn ze:', items:"Is Timmerwerkt financieel gezond?\nHoe is zo'n winwin-lening geregeld?\nWat als het misloopt?\nHoeveel kan ik investeren en wat brengt het op?", ill:'highfive' },
+      { tpl:'foto', titel:'Onze cijfers&\nOnze machines&\nOnze ploeg.', tekst:'Kom alles inkijken op de infoavond. Ahja, je wil toch weten waar je in investeert ;)', photo:{ src:'plaatsing', zoom:1, x:50, y:50 } },
+      { tpl:'uitnodiging', label:'Infoavond winwin-ronde', titel:'Dinsdag\n24 november\n19u', plaats:'Timmerwerkt-atelier\nBraamstraat 7, Evergem', knop:'Schrijf in via de link in bio', noot:'Een winwin-lening geven kan nog tot 4 december.', ill:'ladder', band:['a','w','t','w','a','t','w','t'] }
+    ];
+  }
+  function blank(tpl){
+    var s = { tpl:tpl };
+    TPL[tpl].fields.forEach(function(f){ s[f.k] = ''; });
+    if (tpl === 'cover') { s.titel = 'Titel&\nTitel&\nTitel.'; s.sub = 'Een korte zin onder de titel.'; }
+    if (tpl === 'lijst') { s.titel = 'Titel:'; s.items = 'Eerste punt\nTweede punt\nDerde punt'; s.ill = 'highfive'; }
+    if (tpl === 'foto') { s.titel = 'Titel&\nTitel.'; s.tekst = 'Een korte zin onder de titel.'; }
+    if (tpl === 'uitnodiging') { s.label = 'Label'; s.titel = 'Datum\nUur'; s.plaats = 'Plaats'; s.knop = 'Schrijf in via de link in bio'; s.noot = ''; s.ill = 'ladder'; }
+    if (tpl === 'statement') { s.titel = 'Zaag&\nSchuren&\nFrezen&\nLijm.'; }
+    if (TPL[tpl].photo) s.photo = { src:'atelier', zoom:1, x:50, y:50 };
+    if (TPL[tpl].band) s.band = shuffled();
+    return s;
+  }
+  function shuffled(){
+    var out = [], c = ['t','w','a'];
+    for (var i = 0; i < 8; i++) {
+      var pick;
+      do { pick = c[Math.floor(Math.random() * 3)]; } while (i && pick === out[i - 1]);
+      out.push(pick);
+    }
+    return out;
+  }
+
+  // ---------- State ----------
+  var state = load() || { slides:example(), sel:0 };
+  var uploads = {}; // photo id -> dataURL, kept in memory and saved when space allows
+  if (state.uploads) { uploads = state.uploads; delete state.uploads; }
+
+  function load(){
+    try { var raw = localStorage.getItem(STORE); return raw ? JSON.parse(raw) : null; } catch(e){ return null; }
+  }
+  function save(){
+    var data = { slides:state.slides, sel:state.sel, uploads:uploads };
+    try { localStorage.setItem(STORE, JSON.stringify(data)); }
+    catch(e){
+      // Photos too large for browser storage: keep the texts at least.
+      try { localStorage.setItem(STORE, JSON.stringify({ slides:state.slides, sel:state.sel })); } catch(e2){}
+    }
+  }
+
+  // ---------- Images ----------
+  var cache = {};
+  function img(src){
+    if (!cache[src]) {
+      cache[src] = new Promise(function(res){
+        var i = new Image();
+        i.onload = function(){ res(i); };
+        i.onerror = function(){ res(null); };
+        i.src = src;
+      });
+    }
+    return cache[src];
+  }
+  function photoSrc(p){ return p ? (uploads[p.src] || PHOTOS[p.src] || PHOTOS.atelier) : null; }
+
+  // ---------- Text helpers ----------
+  function font(ctx, weight, size, fam){ ctx.font = weight + ' ' + size + 'px ' + (fam || FONT); }
+  function spacing(ctx, px){ if ('letterSpacing' in ctx) ctx.letterSpacing = px + 'px'; }
+  function wrap(ctx, text, maxW){
+    var out = [];
+    String(text || '').split('\n').forEach(function(para){
+      var words = para.split(/ +/), line = '';
+      words.forEach(function(w){
+        var t = line ? line + ' ' + w : w;
+        if (!line || ctx.measureText(t).width <= maxW) line = t; else { out.push(line); line = w; }
+      });
+      out.push(line);
+    });
+    return out;
+  }
+  // Largest size (from max down to min) where the text fits the box.
+  function fit(ctx, text, o){
+    var size = o.size, lines;
+    for (; size >= o.min; size -= 2) {
+      font(ctx, o.weight, size); spacing(ctx, (o.track || 0) * size);
+      lines = wrap(ctx, text, o.maxW);
+      var widest = Math.max.apply(null, lines.map(function(l){ return ctx.measureText(l).width; }));
+      if (lines.length * size * o.lh <= o.maxH && widest <= o.maxW) break;
+    }
+    size = Math.max(size, o.min);
+    font(ctx, o.weight, size); spacing(ctx, (o.track || 0) * size);
+    lines = wrap(ctx, text, o.maxW);
+    return { size:size, lines:lines, lh:o.lh, weight:o.weight, track:o.track || 0, h:lines.length * size * o.lh };
+  }
+  function draw(ctx, t, x, y, color){
+    font(ctx, t.weight, t.size); spacing(ctx, t.track * t.size);
+    ctx.fillStyle = color; ctx.textBaseline = 'top';
+    t.lines.forEach(function(l, i){ ctx.fillText(l, x, y + i * t.size * t.lh + (t.lh - 1) * t.size / 2); });
+    spacing(ctx, 0);
+    return y + t.h;
+  }
+
+  // ---------- Building blocks ----------
+  function rect(ctx, x, y, w, h, c){ ctx.fillStyle = c; ctx.fillRect(x, y, w, h); }
+  function band(ctx, cells, y){
+    var map = { t:COL.teal, w:COL.wit, a:COL.antraciet }, cw = W / cells.length;
+    cells.forEach(function(c, i){ rect(ctx, Math.round(i * cw), y, Math.ceil(cw), 68, map[c]); });
+  }
+  function photo(ctx, im, p, x, y, w, h){
+    if (!im) { rect(ctx, x, y, w, h, '#ccc'); return; }
+    var s = Math.max(w / im.width, h / im.height) * (p.zoom || 1);
+    var dw = im.width * s, dh = im.height * s;
+    ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+    ctx.drawImage(im, x + (w - dw) * (p.x / 100), y + (h - dh) * (p.y / 100), dw, dh);
+    ctx.restore();
+  }
+  function counter(ctx, i, n, x, y, color){
+    if (i >= n - 1) return; // the last image needs no "more follows"
+    font(ctx, 400, 24, MONO); spacing(ctx, 1); ctx.fillStyle = color; ctx.textBaseline = 'top';
+    ctx.fillText((i + 1) + '/' + n + '  →', x, y); spacing(ctx, 0);
+  }
+  function logo(ctx, im, w, right, bottom){
+    if (!im) return;
+    var h = w * im.height / im.width;
+    ctx.drawImage(im, W - right - w, H - bottom - h, w, h);
+  }
+  function tagline(ctx, color){
+    var t = { size:26, lh:1.25, weight:600, track:0, lines:TAGLINE.split('\n') }; t.h = 3 * 26 * 1.25;
+    draw(ctx, t, M, H - 64 - t.h, color);
+  }
+  function ill(ctx, im, w, right, bottom){
+    if (!im) return 0;
+    var h = w * im.height / im.width, y = H - bottom - h;
+    ctx.drawImage(im, W - right - w, y, w, h);
+    return y;
+  }
+
+  // ---------- Templates ----------
+  var DRAW = {
+    cover: function(ctx, s, a, i, n){
+      photo(ctx, a.photo, s.photo, 0, 0, W, 600);
+      band(ctx, s.band, 600);
+      rect(ctx, 0, 668, W, H - 668, COL.antraciet);
+      var t = fit(ctx, s.titel, { weight:600, size:100, min:56, lh:1.02, maxW:920, maxH:310, track:-0.015 });
+      var y = draw(ctx, t, M, 732, COL.wit);
+      if (s.sub) {
+        var sub = fit(ctx, s.sub, { weight:400, size:38, min:26, lh:1.3, maxW:760, maxH:1160 - (y + 32) });
+        draw(ctx, sub, M, y + 32, COL.wit);
+      }
+      counter(ctx, i, n, M, 1258, COL.wit);
+      logo(ctx, a.logoNeg, 300, M, 64);
+    },
+    lijst: function(ctx, s, a, i, n){
+      rect(ctx, 0, 0, W, H, COL.teal);
+      rect(ctx, 0, 0, 230, 360, COL.antraciet);
+      rect(ctx, W - 230, H - 360, 230, 360, COL.antraciet);
+      rect(ctx, 56, 56, W - 112, H - 112, COL.wit);
+      var x = 128, right = W - 128, limit = a.ill ? 0 : H - 56 - 110;
+      var illTop = ill(ctx, a.ill, 230, 110, 100);
+      if (illTop) limit = illTop - 24;
+      var t = fit(ctx, s.titel, { weight:600, size:96, min:56, lh:1.02, maxW:right - x, maxH:200, track:-0.015 });
+      var top = draw(ctx, t, x, 128, COL.antraciet) + 52;
+      var items = String(s.items || '').split('\n').filter(function(l){ return l.trim(); }).slice(0, 5);
+      // Shrink the list until it fits above the illustration.
+      var size, rows;
+      for (size = 50; size >= 30; size -= 2) {
+        font(ctx, 600, size); spacing(ctx, -0.01 * size);
+        rows = items.map(function(it){ return wrap(ctx, it, right - (x + 2.2 * size)); });
+        var pad = size * 0.6, total = 3;
+        rows.forEach(function(r){ total += 3 + pad * 2 + r.length * size * 1.12; });
+        if (top + total <= limit) break;
+      }
+      var pad2 = size * 0.6, y = top, numW = 2.2 * size;
+      rows.forEach(function(r, k){
+        rect(ctx, x, y, right - x, 3, COL.antraciet); y += 3 + pad2;
+        draw(ctx, { size:size, lh:1.12, weight:600, track:-0.01, lines:[String(k + 1).padStart(2, '0')], h:size * 1.12 }, x, y, COL.tekst);
+        y = draw(ctx, { size:size, lh:1.12, weight:600, track:-0.01, lines:r, h:r.length * size * 1.12 }, x + numW, y, COL.antraciet) + pad2;
+      });
+      if (rows.length) rect(ctx, x, y, right - x, 3, COL.antraciet);
+      counter(ctx, i, n, x, H - 56 - 56 - 24, COL.antraciet);
+    },
+    foto: function(ctx, s, a, i, n){
+      photo(ctx, a.photo, s.photo, 0, 0, W, 620);
+      rect(ctx, 0, 620, W, H - 620, COL.teal);
+      var t = fit(ctx, s.titel, { weight:600, size:96, min:56, lh:1.02, maxW:920, maxH:310, track:-0.015 });
+      var y = draw(ctx, t, M, 692, COL.antraciet);
+      if (s.tekst) {
+        var b = fit(ctx, s.tekst, { weight:400, size:40, min:26, lh:1.3, maxW:840, maxH:1220 - (y + 40) });
+        draw(ctx, b, M, y + 40, COL.antraciet);
+      }
+      counter(ctx, i, n, M, 1258, COL.antraciet);
+    },
+    uitnodiging: function(ctx, s, a, i, n){
+      rect(ctx, 0, 0, W, H, COL.wit);
+      band(ctx, s.band, 0);
+      var illTop = ill(ctx, a.ill, 220, 72, 250);
+      var colW = a.ill ? W - 72 - 220 - 40 - M : 920;
+      // Scale the whole column down until it ends above the tagline.
+      for (var k = 1; k >= 0.6; k -= 0.05) {
+        var y = 148, parts = [];
+        if (s.label) { var l = fit(ctx, s.label, { weight:600, size:36 * k, min:20, lh:1.2, maxW:920, maxH:50 }); parts.push([l, y, COL.tekst]); y += l.h + 24 * k; }
+        var t = fit(ctx, s.titel, { weight:600, size:112 * k, min:48, lh:1.02, maxW:920, maxH:400 * k, track:-0.015 });
+        parts.push([t, y, COL.antraciet]); y += t.h;
+        var narrow = function(yy){ return a.ill && yy + 60 > illTop ? colW : 920; };
+        if (s.plaats) { var p = fit(ctx, s.plaats, { weight:400, size:42 * k, min:24, lh:1.3, maxW:narrow(y), maxH:400 }); y += 36 * k; parts.push([p, y, COL.antraciet]); y += p.h; }
+        var btn = null;
+        if (s.knop) {
+          y += 52 * k;
+          var bt = fit(ctx, s.knop, { weight:600, size:38 * k, min:22, lh:1.2, maxW:narrow(y) - 80, maxH:60 * k });
+          var bw = Math.max.apply(null, bt.lines.map(function(ln){ font(ctx, 600, bt.size); return ctx.measureText(ln).width; })) + 80;
+          btn = { t:bt, y:y, w:bw, h:bt.h + 52 * k }; y += btn.h;
+        }
+        var nt = null;
+        if (s.noot) { y += 36 * k; nt = fit(ctx, s.noot, { weight:400, size:30 * k, min:20, lh:1.4, maxW:Math.min(640, narrow(y)), maxH:400 }); nt.y = y; y += nt.h; }
+        if (y <= H - 64 - 98 - 40) break;
+      }
+      parts.forEach(function(pt){ draw(ctx, pt[0], M, pt[1], pt[2]); });
+      if (btn) { rect(ctx, M, btn.y, btn.w, btn.h, COL.antraciet); draw(ctx, btn.t, M + 40, btn.y + 26 * k, COL.wit); }
+      if (nt) draw(ctx, nt, M, nt.y, COL.antraciet);
+      tagline(ctx, COL.antraciet);
+      logo(ctx, a.logoPos, 330, M, 64);
+    },
+    statement: function(ctx, s, a, i, n){
+      rect(ctx, 0, 0, W, H, COL.antraciet);
+      var t = fit(ctx, s.titel, { weight:600, size:150, min:64, lh:1.0, maxW:920, maxH:900, track:-0.015 });
+      draw(ctx, t, M, 110, COL.wit);
+      // Logo and tagline only open or close a series; in between, a counter.
+      if (i === 0 || i === n - 1) { tagline(ctx, COL.wit); logo(ctx, a.logoNeg, 300, M, 64); }
+      else counter(ctx, i, n, M, 1258, COL.wit);
+    }
+  };
+
+  function render(canvas, s, i, n){
+    var ctx = canvas.getContext('2d');
+    var jobs = [img(LOGOS.neg), img(LOGOS.pos), s.photo ? img(photoSrc(s.photo)) : null, s.ill && ILLS[s.ill] ? img(ILLS[s.ill].src) : null];
+    return Promise.all(jobs).then(function(r){
+      ctx.clearRect(0, 0, W, H);
+      DRAW[s.tpl](ctx, s, { logoNeg:r[0], logoPos:r[1], photo:r[2], ill:r[3] }, i, n);
+    });
+  }
+
+  // ---------- UI ----------
+  var strip = document.getElementById('strip'), panel = document.getElementById('panel');
+  var preview = document.getElementById('preview'), statusEl = document.getElementById('status');
+  var newTpl = document.getElementById('newTpl');
+  Object.keys(TPL).forEach(function(k){ var o = document.createElement('option'); o.value = k; o.textContent = TPL[k].name; newTpl.appendChild(o); });
+
+  function cur(){ return state.slides[state.sel]; }
+  function refresh(){ renderStrip(); renderPreview(); save(); }
+  function renderPreview(){ return render(preview, cur(), state.sel, state.slides.length); }
+
+  function renderStrip(){
+    strip.innerHTML = '';
+    var n = state.slides.length;
+    state.slides.forEach(function(s, i){
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'thumb' + (i === state.sel ? ' on' : '');
+      b.setAttribute('aria-label', 'Beeld ' + (i + 1));
+      var c = document.createElement('canvas'); c.width = W; c.height = H;
+      var tag = document.createElement('span'); tag.textContent = i + 1;
+      b.appendChild(c); b.appendChild(tag);
+      b.addEventListener('click', function(){ state.sel = i; buildForm(); refresh(); });
+      strip.appendChild(b);
+      render(c, s, i, n);
+    });
+  }
+
+  function field(labelText, el, hint){
+    var l = document.createElement('label'); l.className = 'f';
+    var t = document.createElement('span'); t.className = 'mono'; t.textContent = labelText;
+    l.appendChild(t); l.appendChild(el);
+    if (hint) { var h = document.createElement('span'); h.className = 'hint'; h.textContent = hint; l.appendChild(h); }
+    return l;
+  }
+  function btn(text, cls, onClick, disabled){
+    var b = document.createElement('button'); b.type = 'button'; b.className = cls; b.textContent = text;
+    b.disabled = !!disabled; b.addEventListener('click', onClick); return b;
+  }
+
+  var tick;
+  function soon(){ clearTimeout(tick); tick = setTimeout(refresh, 120); renderPreview(); }
+
+  function buildForm(){
+    var s = cur(), def = TPL[s.tpl], n = state.slides.length, i = state.sel;
+    panel.innerHTML = '';
+    var h = document.createElement('h2'); h.textContent = 'Beeld ' + (i + 1) + ' van ' + n; panel.appendChild(h);
+
+    var sel = document.createElement('select');
+    Object.keys(TPL).forEach(function(k){ var o = document.createElement('option'); o.value = k; o.textContent = TPL[k].name; if (k === s.tpl) o.selected = true; sel.appendChild(o); });
+    sel.addEventListener('change', function(){
+      var next = blank(sel.value);
+      // Keep the title and photo when switching template.
+      if (s.titel) next.titel = s.titel;
+      if (s.photo && next.photo) next.photo = s.photo;
+      state.slides[i] = next; buildForm(); refresh();
+    });
+    panel.appendChild(field('Template', sel));
+
+    def.fields.forEach(function(f){
+      var el = f.area ? document.createElement('textarea') : document.createElement('input');
+      if (!f.area) el.type = 'text';
+      if (f.area) el.rows = f.rows || 3;
+      el.value = s[f.k] || '';
+      el.addEventListener('input', function(){ s[f.k] = el.value; soon(); });
+      panel.appendChild(field(f.label, el, f.hint));
+    });
+
+    if (def.photo) {
+      panel.appendChild(document.createElement('hr'));
+      var ps = document.createElement('select');
+      [['atelier','Atelier (voorbeeld)'],['plaatsing','Plaatsing (voorbeeld)']].concat(
+        Object.keys(uploads).filter(function(k){ return k === s.photo.src; }).map(function(k){ return [k, 'Eigen foto']; })
+      ).forEach(function(o){ var op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; if (o[0] === s.photo.src) op.selected = true; ps.appendChild(op); });
+      ps.addEventListener('change', function(){ s.photo.src = ps.value; refresh(); });
+      panel.appendChild(field('Foto', ps));
+
+      var up = document.createElement('label'); up.className = 'filebtn';
+      up.textContent = 'Eigen foto kiezen…';
+      var file = document.createElement('input'); file.type = 'file'; file.accept = 'image/*';
+      file.addEventListener('change', function(){ if (file.files[0]) addPhoto(file.files[0], s); });
+      up.appendChild(file);
+      var row = document.createElement('div'); row.className = 'btns'; row.appendChild(up); panel.appendChild(row);
+
+      var sl = document.createElement('div'); sl.className = 'sliders';
+      [['zoom','Zoom',1,2.5,0.01],['x','Links–rechts',0,100,1],['y','Boven–onder',0,100,1]].forEach(function(d){
+        var r = document.createElement('input'); r.type = 'range'; r.min = d[2]; r.max = d[3]; r.step = d[4]; r.value = s.photo[d[0]];
+        r.setAttribute('aria-label', d[1]);
+        r.addEventListener('input', function(){ s.photo[d[0]] = parseFloat(r.value); soon(); });
+        var lab = document.createElement('span'); lab.textContent = d[1];
+        sl.appendChild(lab); sl.appendChild(r);
+      });
+      panel.appendChild(sl);
+      var ph = document.createElement('span'); ph.className = 'hint';
+      ph.textContent = 'Documentair en ongeposeerd: mensen aan het werk, natuurlijk licht. Er komt nooit tekst over de foto.';
+      panel.appendChild(ph);
+    }
+
+    if (def.ill) {
+      panel.appendChild(document.createElement('hr'));
+      var is = document.createElement('select');
+      [['','Geen illustratie']].concat(Object.keys(ILLS).map(function(k){ return [k, ILLS[k].label]; })).forEach(function(o){
+        var op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; if ((s.ill || '') === o[0]) op.selected = true; is.appendChild(op);
+      });
+      is.addEventListener('change', function(){ s.ill = is.value; refresh(); });
+      panel.appendChild(field('Illustratie', is, 'Kies er een die meevertelt met de boodschap.'));
+    }
+
+    if (def.band) {
+      var bb = document.createElement('div'); bb.className = 'btns';
+      bb.appendChild(btn('Blokjes schudden', 'ghost small', function(){ s.band = shuffled(); refresh(); }));
+      panel.appendChild(bb);
+    }
+
+    panel.appendChild(document.createElement('hr'));
+    var acts = document.createElement('div'); acts.className = 'btns';
+    acts.appendChild(btn('↑ Naar voor', 'ghost small', function(){ move(-1); }, i === 0));
+    acts.appendChild(btn('↓ Naar achter', 'ghost small', function(){ move(1); }, i === n - 1));
+    acts.appendChild(btn('Dupliceren', 'ghost small', function(){
+      state.slides.splice(i + 1, 0, JSON.parse(JSON.stringify(s))); state.sel = i + 1; buildForm(); refresh();
+    }, n >= 10));
+    acts.appendChild(btn('Verwijderen', 'ghost small', function(){
+      state.slides.splice(i, 1); state.sel = Math.max(0, i - 1); buildForm(); refresh();
+    }, n <= 1));
+    panel.appendChild(acts);
+
+    var reset = document.createElement('div'); reset.className = 'btns';
+    reset.appendChild(btn('Opnieuw beginnen met het voorbeeld', 'ghost small', function(){
+      if (!confirm('Alle beelden vervangen door het voorbeeld? Je huidige werk gaat verloren.')) return;
+      state = { slides:example(), sel:0 }; uploads = {}; buildForm(); refresh();
+    }));
+    panel.appendChild(reset);
+  }
+
+  function move(d){
+    var i = state.sel, j = i + d, a = state.slides;
+    var t = a[i]; a[i] = a[j]; a[j] = t; state.sel = j; buildForm(); refresh();
+  }
+
+  function addPhoto(file, s){
+    var reader = new FileReader();
+    reader.onload = function(){
+      var im = new Image();
+      im.onload = function(){
+        // Downscale large photos so the page stays fast.
+        var max = 2160, k = Math.min(1, max / Math.max(im.width, im.height));
+        var c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+        var id = 'upload-' + Date.now();
+        uploads[id] = c.toDataURL('image/jpeg', 0.88);
+        // Forget uploads that no slide uses any more.
+        Object.keys(uploads).forEach(function(k2){ if (k2 !== id && !state.slides.some(function(sl){ return sl.photo && sl.photo.src === k2; }) && k2 !== s.photo.src) delete uploads[k2]; });
+        s.photo = { src:id, zoom:1, x:50, y:50 };
+        buildForm(); refresh();
+      };
+      im.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  document.getElementById('addSlide').addEventListener('click', function(){
+    if (state.slides.length >= 10) { say(null, 'Een carrousel heeft maximaal 10 beelden.'); return; }
+    state.slides.splice(state.sel + 1, 0, blank(newTpl.value)); state.sel += 1; buildForm(); refresh();
+  });
+
+  // ---------- Export ----------
+  function say(button, msg, label){
+    statusEl.textContent = msg;
+    if (button) {
+      if (!button.dataset.label) button.dataset.label = button.textContent;
+      button.textContent = label; button.classList.add('done');
+    }
+    clearTimeout(say.t);
+    say.t = setTimeout(function(){
+      statusEl.textContent = '';
+      document.querySelectorAll('button.done').forEach(function(b){ b.textContent = b.dataset.label; b.classList.remove('done'); });
+    }, 3000);
+  }
+  function fullCanvas(i){
+    var c = document.createElement('canvas'); c.width = W; c.height = H;
+    return render(c, state.slides[i], i, state.slides.length).then(function(){ return c; });
+  }
+  function blob(c){ return new Promise(function(res){ c.toBlob(res, 'image/png'); }); }
+  function download(b, name){
+    var a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); }, 2000);
+  }
+  function stamp(){ var d = new Date(); return d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0'); }
+
+  document.getElementById('dlOne').addEventListener('click', function(){
+    var b = this;
+    fullCanvas(state.sel).then(blob).then(function(png){
+      download(png, 'timmerwerkt-' + stamp() + '-' + (state.sel + 1) + '.png');
+      say(b, 'Beeld ' + (state.sel + 1) + ' gedownload (1080 × 1350).', '✓ Gedownload');
+    });
+  });
+  document.getElementById('dlAll').addEventListener('click', function(){
+    var b = this;
+    if (!window.JSZip) { say(null, 'Zip maken lukt niet zonder internetverbinding. Download de beelden één voor één.'); return; }
+    var zip = new JSZip(), n = state.slides.length, chain = Promise.resolve();
+    say(null, 'Bezig met ' + n + ' beelden…');
+    state.slides.forEach(function(s, i){
+      chain = chain.then(function(){ return fullCanvas(i).then(blob).then(function(png){ zip.file('timmerwerkt-' + stamp() + '-' + (i + 1) + '.png', png); }); });
+    });
+    chain.then(function(){ return zip.generateAsync({ type:'blob' }); }).then(function(z){
+      download(z, 'timmerwerkt-carrousel-' + stamp() + '.zip');
+      say(b, n + ' beelden gedownload als zip.', '✓ Gedownload');
+    });
+  });
+
+  // ---------- Start once the fonts are ready ----------
+  if (state.sel >= state.slides.length) state.sel = 0;
+  buildForm();
+  Promise.all([
+    document.fonts.load('600 100px roc-grotesk'),
+    document.fonts.load('400 40px roc-grotesk'),
+    document.fonts.load('400 24px "IBM Plex Mono"')
+  ]).catch(function(){}).then(refresh);
+})();
+</script>
+</body>
+</html>
